@@ -1,8 +1,13 @@
+
 # Automated Event-Driven Report Generator (AWS-XS)
 
 An enterprise-ready, serverless ingestion pipeline built on AWS using **Terraform (Infrastructure as Code)**. This system automatically processes raw business data uploads (`.csv`) in real-time, generates analytical summaries, and stores them securely in an optimized downstream storage tier.
 
 ## 📊 Architecture Overview
+
+
+![alt text](architecture-aws.dot.png)
+
 
 ```
 [Raw CSV Upload] ➡️ (S3 Source Bucket) 
