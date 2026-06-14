@@ -1,0 +1,32 @@
+# Local .terraform directories containing downloaded providers
+**/.terraform/
+
+# Terraform state files (Crucial: contains infrastructure secrets!)
+*.tfstate
+*.tfstate.*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Custom local variable configurations (sensitive inputs)
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local CLI configuration files
+.terraformrc
+terraform.rc
+
+# --- Python / Application Source Ignored Files ---
+# Python cache files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated Lambda deployment zip bundles
+src/*.zip
