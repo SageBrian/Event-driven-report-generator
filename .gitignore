@@ -30,3 +30,9 @@ terraform.rc
 
 # Generated Lambda deployment zip bundles
 src/*.zip
+
+# Data files (may contain personal information)
+*.csv
+*.xlsx
+*.xls
+EOF
