@@ -1,145 +1,171 @@
+# Event-Driven CSV Report Generator
 
-# Automated Event-Driven Report Generator (AWS-XS)
+A serverless pipeline on AWS that turns a CSV upload into a processed report with no servers to manage and no manual steps. Drop a `.csv` into an S3 bucket, and a Lambda function parses it and writes a summary report to a second bucket. The entire stack is defined in Terraform and deploys with three commands.
 
-An enterprise-ready, serverless ingestion pipeline built on AWS using **Terraform (Infrastructure as Code)**. This system automatically processes raw business data uploads (`.csv`) in real-time, generates analytical summaries, and stores them securely in an optimized downstream storage tier.
-
-## 📊 Architecture Overview
-
-
-![alt text](architecture-aws.dot.png)
-
-
-```
-[Raw CSV Upload] ➡️ (S3 Source Bucket) 
-                         │
-                  (Event Notification)
-                         ▼
-                   [AWS Lambda] (Python 3.11)
-                         │
-                  (Processes Data)
-                         ▼
-             (S3 Destination Bucket) ➡️ [Amazon SES]*
-
-```
-
-### **Architectural Highlights & Real-World Decisions**
-
-* **100% Serverless & Idle-Cost Free:** Utilizing AWS Lambda and Amazon S3 means the infrastructure scales automatically with traffic spikes, but costs **$0.00/month** when no files are being processed.
-* **Security First (Principle of Least Privilege):** The Lambda execution role is strictly constrained using explicit IAM policies. It *only* has read access to the source bucket, write access to the destination bucket, and stream write permissions to CloudWatch Logs.
-* **Resilient File Scoping:** S3 Bucket Notifications are explicitly filtered to execute only on `.csv` extensions, avoiding unintended compute costs from invalid uploads.
+![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)
+![AWS Lambda](https://img.shields.io/badge/Compute-AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)
+![Amazon S3](https://img.shields.io/badge/Storage-Amazon%20S3-569A31?logo=amazons3&logoColor=white)
+![Python](https://img.shields.io/badge/Runtime-Python%203.11-3776AB?logo=python&logoColor=white)
 
 ---
 
-## 🛠️ Technology Stack
+## How it works
 
-* **Infrastructure as Code:** Terraform (`>= 1.0.0`)
-* **Cloud Provider:** Amazon Web Services (AWS)
-* **Compute:** AWS Lambda (Runtime: Python 3.11)
-* **Storage:** Amazon S3 (Simple Storage Service)
-* **Monitoring:** AWS CloudWatch Logs
-
----
-
-## 🚀 Deployment Instructions
-
-### **Prerequisites**
-
-1. [AWS CLI v2 Installed and Configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) with appropriate programmatic access.
-2. [Terraform Installed](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
-
-### **1. Clone and Navigate to Infrastructure**
-
-```bash
-cd aws-xs-report-generator/terraform
-
+```mermaid
+flowchart LR
+    U([User / Upload]) -->|"report.csv"| S[(S3 Source Bucket)]
+    S -->|"ObjectCreated event<br/>filter: *.csv"| L[["Lambda<br/>csv-report-generator"]]
+    L -->|"reports/summary-*.txt"| D[(S3 Destination Bucket)]
+    L -.->|logs| C[CloudWatch Logs]
 ```
 
-### **2. Initialize and Deploy**
+1. A file is uploaded to the **source bucket**.
+2. S3 emits an `ObjectCreated` event. A suffix filter means only `.csv` files trigger the function.
+3. The **Lambda function** reads the object, parses it with Python's `csv` module, and counts the records.
+4. It writes a report to `reports/summary-<filename>.txt` in the **destination bucket**.
 
-Initialize the backend provider and install dependencies:
+<details>
+<summary>Auto-generated infrastructure diagram (TerraVision)</summary>
+
+![Generated AWS architecture diagram](architecture-aws.dot.png)
+
+</details>
+
+## Design decisions
+
+| Decision | Why |
+|---|---|
+| **Serverless (S3 + Lambda)** | There is nothing to patch or scale, and cost is per-invocation. An idle pipeline costs close to nothing. |
+| **Event-driven, not polling** | S3 pushes events to Lambda, so there is no scheduler or cron job and no idle compute waiting for files. |
+| **Suffix filter on the S3 trigger** | Non-CSV uploads never invoke the function, which avoids wasted invocations. |
+| **Separate source and destination buckets** | Writing output to the trigger bucket could cause recursive invocations. Two buckets rule that out. |
+| **Scoped IAM policy** | The function can `GetObject` only on the source bucket and `PutObject` only on the destination bucket. Log permissions are limited to the three CloudWatch Logs actions it needs. |
+| **Infrastructure as Code** | Every resource is in Terraform, so the environment is reproducible, reviewable, and easy to tear down. |
+| **Randomized bucket names** | A `random_string` suffix avoids S3's global naming collisions so anyone can deploy the project without editing it. |
+
+## Repository structure
+
+```
+.
+├── src/
+│   └── lambda_function.py      # Lambda handler: parse CSV, build report
+├── terraform/
+│   ├── main.tf                 # Buckets, IAM, Lambda, S3 trigger
+│   ├── variables.tf            # Region (default: us-east-1)
+│   ├── output.tf               # Bucket names
+│   └── .terraform.lock.hcl     # Pinned provider versions
+├── architecture-aws.dot.png    # Generated architecture diagram
+└── README.md
+```
+
+## Getting started
+
+### Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.0.0`
+- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), configured with credentials that can create S3, IAM, and Lambda resources
+
+### Deploy
 
 ```bash
+cd terraform
 terraform init
-
-```
-
-Generate and review the execution plan to verify resources to be created:
-
-```bash
 terraform plan
-
+terraform apply
 ```
 
-Deploy the infrastructure to your live AWS environment:
+Terraform prints the two generated bucket names when it finishes:
+
+```
+source_bucket_name      = "report-processor-source-x1y2z3"
+destination_bucket_name = "report-processor-dest-x1y2z3"
+```
+
+To change the region, run `terraform apply -var="aws_region=eu-west-1"`.
+
+### Try it
 
 ```bash
-terraform apply --auto-approve
-
-```
-
-*Note: Terraform will output the randomly generated, globally unique names of your source and destination S3 buckets.*
-
----
-
-## 🧪 Verification & Testing
-
-To simulate a real-world client workflow, you can test the automated ingestion pipeline directly from your terminal.
-
-### **1. Create Mock Data**
-
-Create a local file named `student.csv`:
-
-```csv
+# 1. Create a sample file
+cat > students.csv <<'EOF'
 id,name,course,status
 1,Alex Mercer,Cloud Architecture,Enrolled
 2,Sarah Connor,Systems Networking,Graduated
+EOF
 
+# 2. Upload it to the source bucket
+aws s3 cp students.csv s3://<source_bucket_name>/
+
+# 3. Check the destination bucket (allow a few seconds)
+aws s3 ls s3://<destination_bucket_name>/reports/
+
+# 4. Read the report
+aws s3 cp s3://<destination_bucket_name>/reports/summary-students.txt -
 ```
 
-### **2. Upload to the Ingestion Bucket**
+### Example output
 
-Upload the file using the source bucket name provided by your Terraform output:
+```
+=============================================
+AUTOMATED CLOUD PROCESSING REPORT
+=============================================
+Original File: students.csv
+Total Records Processed: 2
+Status: SUCCESS
+
+Raw Payload Summary:
+[
+  { "id": "1", "name": "Alex Mercer", "course": "Cloud Architecture", "status": "Enrolled" },
+  { "id": "2", "name": "Sarah Connor", "course": "Systems Networking", "status": "Graduated" }
+]
+=============================================
+```
+
+### Debugging
+
+Function logs go to CloudWatch under `/aws/lambda/csv-report-generator`:
 
 ```bash
-aws s3 cp "student.csv" s3://YOUR_SOURCE_BUCKET_NAME/
-
+aws logs tail /aws/lambda/csv-report-generator --follow
 ```
 
-### **3. Confirm Automated Execution**
-
-The S3 event trigger automatically spins up the Lambda function to process the file. Check your destination bucket to verify that the structured analysis report text file has been generated:
+### Tear down
 
 ```bash
-aws s3 ls s3://YOUR_DEST_BUCKET_NAME/reports/
-
+terraform destroy
 ```
 
-To see the processed output, copy the report back down:
+Both buckets are created with `force_destroy = true`, so `destroy` removes them even if they still contain files.
 
-```bash
-aws s3 cp s3://YOUR_DEST_BUCKET_NAME/reports/summary-student.txt .
-cat summary-student.txt
+## Known limitations
 
-```
+This is a working proof of concept, and some edge cases are not handled yet:
 
----
+- **Only the first S3 record is processed.** A batched event with several records would skip the rest.
+- **Object keys are not URL-decoded.** Files with spaces or special characters in their names may fail to load.
+- **The whole file is read into memory.** This is fine for small files but will not scale to very large CSVs.
+- **The report is a record count plus a JSON dump.** There is no real aggregation yet.
+- **No error handling or retries beyond Lambda defaults.** A malformed file just fails the invocation.
 
-## ⚙️ Clean Up
+## Roadmap
 
-To avoid unexpected charges to your AWS account, tear down the deployed resources when you are finished testing:
+- [ ] Handle every record in the event and URL-decode object keys
+- [ ] Add real analytics (column statistics, group-by summaries) using `pandas` or the standard library
+- [ ] Add a dead-letter queue (SQS) for failed invocations
+- [ ] Email report links to stakeholders with Amazon SES
+- [ ] Output reports as PDF or HTML
+- [ ] Add unit tests for the handler and a CI pipeline (`terraform validate`, `tflint`, `pytest`)
+- [ ] Explicit CloudWatch log group with a retention period
+- [ ] Remote Terraform state (S3 backend with locking)
 
-```bash
-terraform destroy --auto-approve
+## What this project demonstrates
 
-```
+- Designing an event-driven architecture on AWS
+- Writing least-privilege IAM policies
+- Managing infrastructure declaratively with Terraform, including provider version pinning
+- Wiring S3 notifications, Lambda permissions, and IAM roles together correctly
+- Building and testing a small data-processing function in Python
 
----
+## License
 
-## 📈 Future Enhancements (Standard/Premium Roadmap)
-
-* Integrate **Amazon SES** to email the processed report links directly to key business stakeholders.
-* Implement a **Dead Letter Queue (DLQ)** via Amazon SQS to handle gracefully corrupt or malformed CSV payloads.
-
----
-
-*Developed as a showcase of production-ready, serverless automation using HashiCorp Terraform.*
+Add a license of your choice (MIT is a common default for portfolio projects).
