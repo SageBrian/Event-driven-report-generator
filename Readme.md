@@ -9,15 +9,10 @@ A serverless pipeline on AWS that turns a CSV upload into a processed report wit
 
 ---
 
+---
 ## How it works
 
-```mermaid
-flowchart LR
-    U([User / Upload]) -->|"report.csv"| S[(S3 Source Bucket)]
-    S -->|"ObjectCreated event<br/>filter: *.csv"| L[["Lambda<br/>csv-report-generator"]]
-    L -->|"reports/summary-*.txt"| D[(S3 Destination Bucket)]
-    L -.->|logs| C[CloudWatch Logs]
-```
+![Architecture Diagram](CSV-Report-Generation-with-S3-and-Lambda.jpeg)
 
 1. A file is uploaded to the **source bucket**.
 2. S3 emits an `ObjectCreated` event. A suffix filter means only `.csv` files trigger the function.
